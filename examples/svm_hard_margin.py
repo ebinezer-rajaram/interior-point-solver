@@ -1,7 +1,10 @@
 """
-4M17 Coursework - Question 2(e): Hard-Margin SVM using Barrier Method
+Hard-Margin SVM using the Barrier Method
 
-Train a hard-margin SVM on the provided data using the barrier method solver from Q1.
+Train a hard-margin SVM on a 2-D labelled dataset using the barrier method in
+src/barrier.py.
+
+Expects data/svm_training_data.csv (columns x_1, x_2, y with y in {-1, +1}).
 
 Primal formulation:
     min_{w,b} 1/2 ||w||_2^2
@@ -19,10 +22,9 @@ from scipy.optimize import minimize
 import sys
 import os
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from optimizer import newton_eq
+from src.barrier import barrier_method
 
 
 def load_data(filepath):
@@ -117,74 +119,27 @@ def barrier_method_svm(X, y, t0=1.0, mu=10.0, eps_outer=1e-6,
     print(f"Max constraint value: {max_constraint:.6e} (must be < 0)")
     assert max_constraint < 0, "Starting point is not strictly feasible!"
 
-    # Barrier method
-    t = t0
-    x = x0.copy()
-    history = [x.copy()]
+    # Barrier method (shared implementation in src/barrier.py)
+    x, outer_history = barrier_method(
+        f0, grad0, hess0, fis, grads, hesses, A, b_eq, x0,
+        t0=t0, mu=mu, eps_outer=eps_outer, alpha=alpha, beta=beta,
+        eps_inner=eps_inner, max_outer_it=max_outer_it
+    )
+    history = [x0.copy()] + [h['x'] for h in outer_history]
 
     print("\n" + "="*70)
     print(f"{'Iter':<6} {'t':<12} {'m/t':<12} {'f0(x)':<12} {'||w||':<12}")
     print("="*70)
-
-    for outer_it in range(max_outer_it):
-        # Construct barrier objective: φ_t(x) = t*f0(x) - Σ log(-fi(x))
-        def phi_t(x):
-            val = t * f0(x)
-            for fi in fis:
-                fi_val = fi(x)
-                if fi_val >= 0:
-                    return np.inf
-                val -= np.log(-fi_val)
-            return val
-
-        def grad_phi_t(x):
-            g = t * grad0(x)
-            for i, fi in enumerate(fis):
-                fi_val = fi(x)
-                if fi_val >= 0:
-                    return np.full(n, np.nan)
-                g -= grads[i](x) / fi_val
-            return g
-
-        def hess_phi_t(x):
-            H = t * hess0(x)
-            for i, fi in enumerate(fis):
-                fi_val = fi(x)
-                if fi_val >= 0:
-                    return np.full((n, n), np.nan)
-                grad_fi_val = grads[i](x)
-                H -= hesses[i](x) / fi_val
-                H += np.outer(grad_fi_val, grad_fi_val) / (fi_val ** 2)
-            return H
-
-        # Centering step: minimize φ_t(x) using Newton's method
-        x_new, it_inner, xs_inner, _ = newton_eq(
-            phi_t, grad_phi_t, hess_phi_t, A, b_eq, x,
-            alpha=alpha, beta=beta, eps=eps_inner, max_it=50
-        )
-
-        x = x_new
-        history.append(x.copy())
-
-        # Compute current values
-        w_norm = np.linalg.norm(x[:2])
-        gap = m / t
-
-        print(f"{outer_it+1:<6} {t:<12.2e} {gap:<12.2e} {f0(x):<12.6f} {w_norm:<12.6f}")
-
-        # Check stopping criterion: m/t <= eps_outer
-        if gap <= eps_outer:
-            print("="*70)
-            print(f"Converged: m/t = {gap:.2e} <= {eps_outer:.2e}")
-            break
-
-        # Increase t
-        t *= mu
+    for k, h in enumerate(outer_history):
+        w_norm = np.linalg.norm(h['x'][:2])
+        print(f"{k+1:<6} {h['t']:<12.2e} {h['gap']:<12.2e} {h['f0_val']:<12.6f} {w_norm:<12.6f}")
+    print("="*70)
+    if outer_history and outer_history[-1]['gap'] <= eps_outer:
+        print(f"Converged: m/t = {outer_history[-1]['gap']:.2e} <= {eps_outer:.2e}")
     else:
-        print("="*70)
-        print("Warning: Maximum iterations reached")
+        print("Warning: barrier method did not reach m/t <= eps_outer")
 
-    return x, outer_it + 1, history
+    return x, len(outer_history), history
 
 
 def find_feasible_start(X, y):
@@ -277,7 +232,7 @@ def classify_point(w, b, x):
     return prediction, score
 
 
-def plot_svm_results(X, y, w, b, test_points, save_path='plots/q2e_svm.png'):
+def plot_svm_results(X, y, w, b, test_points, save_path='plots/svm_hard_margin.png'):
     """
     Plot the training data, decision boundary, and margins with professional styling
     matching the existing plot aesthetics.
@@ -383,11 +338,11 @@ def plot_svm_results(X, y, w, b, test_points, save_path='plots/q2e_svm.png'):
 
 def main():
     print("="*70)
-    print("4M17 Coursework - Question 2(e): Hard-Margin SVM")
+    print("Hard-Margin SVM")
     print("="*70)
 
     # Load data
-    data_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'part_e_training_data.csv')
+    data_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'svm_training_data.csv')
     X, y = load_data(data_path)
     m = len(y)
 
@@ -490,7 +445,7 @@ def main():
     plot_svm_results(X, y, w_star, b_star, test_points)
 
     print("\n" + "="*70)
-    print("Question 2(e) Complete!")
+    print("Done.")
     print("="*70)
 
 

@@ -1,5 +1,5 @@
 """
-Q1(c): Equality-Constrained Newton's Method
+Equality-Constrained Newton's Method
 
 This script demonstrates equality-constrained Newton's method for solving:
     minimize f0(x1, x2) = log(e^x1 + e^x2) + 0.5*(x1^2 + x2^2)
@@ -15,7 +15,7 @@ The results include:
 - Function value at the optimum
 - Verification of constraint satisfaction
 - Number of iterations
-- Contour plot with constraint line saved as 'plots/q1c_contours.png'
+- Contour plot with constraint line saved as 'plots/newton_equality_contours.png'
 """
 
 import sys
@@ -54,7 +54,7 @@ def verify_kkt_stationarity(x_star, A, grad_f, nu_star, tol=1e-6):
 
 
 def main():
-    """Run equality-constrained Newton's method on Q1(c) and generate visualizations."""
+    """Run equality-constrained Newton's method and generate visualizations."""
 
     # Define constraint: 0.5*x1 + x2 = 1
     A = np.array([[0.5, 1.0]])
@@ -69,7 +69,7 @@ def main():
     # Verify initial feasibility
     constraint_residual_x0 = np.linalg.norm(A @ x0 - b)
     print("=" * 60)
-    print("Q1(c): Equality-Constrained Newton's Method")
+    print("Equality-Constrained Newton's Method")
     print("=" * 60)
     print(f"\nConstraint: {A[0, 0]:.1f}*x1 + {A[0, 1]:.1f}*x2 = {b[0]:.1f}")
     print(f"\nInitial point (minimum-norm feasible):")
@@ -173,8 +173,8 @@ def main():
         x_range=(-2, 3),
         y_range=(-2, 3),
         levels=40,
-        title="Equality-Constrained Newton's Method (Q1c)",
-        output_file='plots/q1c_contours.png'
+        title="Equality-Constrained Newton's Method",
+        output_file='plots/newton_equality_contours.png'
     )
 
 

@@ -1,5 +1,5 @@
 """
-Q1(b): Unconstrained Newton's Method
+Unconstrained Newton's Method
 
 This script demonstrates Newton's method for minimizing:
     f0(x1, x2) = log(e^x1 + e^x2) + 0.5*(x1^2 + x2^2)
@@ -11,7 +11,7 @@ The results include:
 - Optimal solution x_star
 - Function value at the optimum
 - Number of iterations
-- Contour plot with convergence path saved as 'plots/q1b_contours.png'
+- Contour plot with convergence path saved as 'plots/newton_contours.png'
 """
 
 import sys
@@ -26,7 +26,7 @@ from src.plotting import plot_convergence
 
 
 def main():
-    """Run Newton's method on Q1(b) and generate visualizations."""
+    """Run Newton's method on f0 and generate visualizations."""
 
     # Starting point
     x0 = np.array([-1.5, 2.5])
@@ -46,7 +46,7 @@ def main():
 
     # Print results
     print("=" * 60)
-    print("Q1(b): Newton's Method Results")
+    print("Newton's Method Results")
     print("=" * 60)
     print(f"x_star:              {x_star}")
     print(f"f0(x_star):          {f0(x_star):.6f}")
@@ -74,8 +74,8 @@ def main():
         x_range=(-2, 3),
         y_range=(-2, 3),
         levels=40,
-        title="Newton's Method Convergence Path (Q1b)",
-        output_file='plots/q1b_contours.png'
+        title="Newton's Method Convergence Path",
+        output_file='plots/newton_contours.png'
     )
 
 
