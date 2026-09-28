@@ -1,7 +1,7 @@
 """
-Q1(e): Barrier Method with Phase I for Inequality-Constrained Optimization
+Barrier Method with Phase I for Inequality-Constrained Optimization
 
-This script implements the barrier method for solving:
+This example applies the barrier method in src/barrier.py to:
     minimize f0(x1, x2) = log(e^x1 + e^x2) + 0.5*(x1^2 + x2^2)
     subject to:
         0.5*x1 + x2 = 1                    (equality constraint)
@@ -16,11 +16,12 @@ Phase I finds an initial strictly feasible point by solving:
     minimize s
     subject to: fi(x) <= s, Ax = b
 
-The implementation includes:
-- Barrier method outer loop with parameter t
-- Inner loop using equality-constrained Newton's method
-- Phase I to find initial feasible point
-- Convergence tracking and visualization
+The example:
+- runs Phase I to find a strictly feasible starting point
+- runs the barrier method from that point (outer loop over t, inner
+  equality-constrained Newton centering steps)
+- prints the convergence history and cross-checks against SciPy (SLSQP)
+- plots the feasible segment and barrier path to plots/barrier_solution.png
 """
 
 import sys
@@ -29,12 +30,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import numpy as np
 import matplotlib.pyplot as plt
-from src.optimizer import newton_eq
+from src.barrier import barrier_method, phase_I
 from src.functions import f0, grad_f0, hess_f0
 
 
 # ============================================================================
-# Inequality constraint functions for Q1(e)
+# Inequality constraint functions
 # ============================================================================
 
 def f1(x):
@@ -83,312 +84,12 @@ def hess_f3(x):
 
 
 # ============================================================================
-# Barrier Method Implementation
-# ============================================================================
-
-def barrier_method(f0, grad0, hess0, fis, grads, hesses, A, b, x0,
-                   t0=1.0, mu=10.0, eps_outer=1e-6, alpha=0.1, beta=0.5,
-                   eps_inner=1e-6, max_outer_it=100):
-    """
-    Barrier method for inequality-constrained optimization.
-
-    Solves: minimize f0(x)
-           subject to: fi(x) <= 0, i=1..m
-                      Ax = b
-
-    Uses the log barrier objective:
-        φ_t(x) = t*f0(x) - Σ log(-fi(x))
-
-    Parameters
-    ----------
-    f0 : callable
-        Objective function; f0(x) → float.
-    grad0 : callable
-        Gradient of f0; grad0(x) → ndarray of shape (n,).
-    hess0 : callable
-        Hessian of f0; hess0(x) → ndarray of shape (n, n).
-    fis : list of callable
-        List of inequality constraint functions; fi(x) → float.
-        Constraints are fi(x) <= 0.
-    grads : list of callable
-        List of gradient functions for constraints.
-    hesses : list of callable
-        List of Hessian functions for constraints.
-    A : ndarray, shape (p, n)
-        Equality constraint matrix.
-    b : ndarray, shape (p,)
-        Equality constraint right-hand side.
-    x0 : ndarray, shape (n,)
-        Initial strictly feasible point (fi(x0) < 0 for all i, Ax0 = b).
-    t0 : float, optional
-        Initial barrier parameter.
-    mu : float, optional
-        Barrier parameter multiplier (mu > 1).
-    eps_outer : float, optional
-        Outer loop stopping tolerance (m/t <= eps_outer).
-    alpha : float, optional
-        Line search sufficient decrease parameter.
-    beta : float, optional
-        Line search shrinkage factor.
-    eps_inner : float, optional
-        Inner loop (Newton) stopping tolerance.
-    max_outer_it : int, optional
-        Maximum number of outer iterations.
-
-    Returns
-    -------
-    x_star : ndarray, shape (n,)
-        Optimal solution.
-    history : list of dict
-        History of outer iterations containing:
-            - t: barrier parameter
-            - x: current point
-            - f0_val: objective value
-            - gap: duality gap (m/t)
-            - num_inner_it: number of inner Newton iterations
-    """
-    m = len(fis)
-    x = x0.copy()
-    t = t0
-    history = []
-
-    for outer_it in range(max_outer_it):
-        # Check if all constraints are strictly satisfied
-        constraint_violations = [fi(x) for fi in fis]
-        if any(cv >= 0 for cv in constraint_violations):
-            raise ValueError(f"Point not strictly feasible at outer iteration {outer_it}: "
-                           f"constraint values = {constraint_violations}")
-
-        # Define barrier objective φ_t(x) = t*f0(x) - Σ log(-fi(x))
-        def phi_t(x_val):
-            obj = t * f0(x_val)
-            for fi in fis:
-                fi_val = fi(x_val)
-                if fi_val >= 0:
-                    return np.inf  # Not in domain
-                obj -= np.log(-fi_val)
-            return obj
-
-        # Gradient of φ_t:
-        # ∇φ_t = t*∇f0 - Σ (∇fi / (-fi))
-        def grad_phi_t(x_val):
-            grad = t * grad0(x_val)
-            for fi, grad_fi in zip(fis, grads):
-                fi_val = fi(x_val)
-                grad += grad_fi(x_val) / (-fi_val)  # Note: -∇(-log(-fi)) = ∇fi/(-fi)
-            return grad
-
-        # Hessian of φ_t:
-        # ∇²φ_t = t*∇²f0 + Σ [∇²fi/(-fi) + (∇fi ∇fi^T)/(-fi)²]
-        def hess_phi_t(x_val):
-            hess = t * hess0(x_val)
-            for fi, grad_fi, hess_fi in zip(fis, grads, hesses):
-                fi_val = fi(x_val)
-                grad_fi_val = grad_fi(x_val)
-                hess += hess_fi(x_val) / (-fi_val)
-                hess += np.outer(grad_fi_val, grad_fi_val) / (fi_val ** 2)
-            return hess
-
-        # Solve centering problem: minimize φ_t(x) subject to Ax = b
-        # using equality-constrained Newton
-        try:
-            x, num_inner_it, _, _ = newton_eq(
-                f=phi_t,
-                grad=grad_phi_t,
-                hess=hess_phi_t,
-                A=A,
-                b=b,
-                x0=x,
-                alpha=alpha,
-                beta=beta,
-                eps=eps_inner,
-                max_it=50
-            )
-        except Exception as e:
-            print(f"Warning: Newton solver failed at outer iteration {outer_it}: {e}")
-            break
-
-        # Compute duality gap
-        gap = m / t
-
-        # Store history
-        f0_val = f0(x)
-        history.append({
-            't': t,
-            'x': x.copy(),
-            'f0_val': f0_val,
-            'gap': gap,
-            'num_inner_it': num_inner_it,
-            'constraint_vals': [fi(x) for fi in fis]
-        })
-
-        # Check stopping criterion
-        if gap <= eps_outer:
-            break
-
-        # Update barrier parameter
-        t *= mu
-    else:
-        print("Warning: maximum outer iteration limit reached")
-
-    return x, history
-
-
-# ============================================================================
-# Phase I Implementation
-# ============================================================================
-
-def phase_I(fis, grads, hesses, A, b, n_original, t0=1.0, mu=10.0,
-            eps_outer=1e-6, alpha=0.1, beta=0.5, eps_inner=1e-6):
-    """
-    Phase I method to find strictly feasible point.
-
-    Solves: minimize s
-           subject to: fi(x) <= s, i=1..m
-                      Ax = b
-
-    Uses variable z = [x; s] where x has dimension n_original and s is scalar.
-
-    Parameters
-    ----------
-    fis : list of callable
-        List of inequality constraint functions for original problem.
-    grads : list of callable
-        List of gradient functions for constraints.
-    hesses : list of callable
-        List of Hessian functions for constraints.
-    A : ndarray, shape (p, n_original)
-        Equality constraint matrix.
-    b : ndarray, shape (p,)
-        Equality constraint right-hand side.
-    n_original : int
-        Dimension of x in original problem.
-    t0, mu, eps_outer, alpha, beta, eps_inner : optional
-        Parameters for barrier method (see barrier_method).
-
-    Returns
-    -------
-    x_phase1 : ndarray, shape (n_original,) or None
-        Strictly feasible point if found.
-    s_star : float
-        Optimal value of s (if < 0, then x_phase1 is strictly feasible).
-    z_star : ndarray, shape (n_original + 1,)
-        Full Phase I solution [x; s].
-    """
-    m = len(fis)
-
-    # Step 1: Find minimum-norm feasible point for Ax = b
-    if A.size > 0 and b.size > 0:
-        AAT = A @ A.T
-        AAT_inv = np.linalg.inv(AAT)
-        x_init = A.T @ AAT_inv @ b
-    else:
-        x_init = np.zeros(n_original)
-
-    # Step 2: Set s_0 = max_i fi(x_init) + 1 to ensure gi(z0) < 0
-    max_constraint = max(fi(x_init) for fi in fis)
-    s_0 = max_constraint + 1.0
-
-    print(f"Phase I initialization:")
-    print(f"  x_init = {x_init}")
-    print(f"  max_i fi(x_init) = {max_constraint:.6f}")
-    print(f"  s_0 = {s_0:.6f}")
-
-    # Initial point for Phase I
-    z0 = np.concatenate([x_init, [s_0]])
-
-    # Define Phase I objective: f0^(I)(z) = s
-    def f0_phase1(z):
-        return z[-1]  # Just s
-
-    def grad0_phase1(z):
-        g = np.zeros(n_original + 1)
-        g[-1] = 1.0  # ∂s/∂s = 1
-        return g
-
-    def hess0_phase1(z):
-        return np.zeros((n_original + 1, n_original + 1))
-
-    # Define Phase I constraints: gi(z) = fi(x) - s <= 0
-    def make_gi(fi):
-        def gi(z):
-            x = z[:n_original]
-            s = z[-1]
-            return fi(x) - s
-        return gi
-
-    def make_grad_gi(grad_fi):
-        def grad_gi(z):
-            x = z[:n_original]
-            grad = np.zeros(n_original + 1)
-            grad[:n_original] = grad_fi(x)
-            grad[-1] = -1.0
-            return grad
-        return grad_gi
-
-    def make_hess_gi(hess_fi):
-        def hess_gi(z):
-            x = z[:n_original]
-            hess = np.zeros((n_original + 1, n_original + 1))
-            hess[:n_original, :n_original] = hess_fi(x)
-            # ∂²/∂s² = 0, ∂²/∂x∂s = 0
-            return hess
-        return hess_gi
-
-    # Create augmented constraint lists
-    gis = [make_gi(fi) for fi in fis]
-    grad_gis = [make_grad_gi(grad_fi) for grad_fi in grads]
-    hess_gis = [make_hess_gi(hess_fi) for hess_fi in hesses]
-
-    # Augmented equality constraint: [A 0] * z = b
-    if A.size > 0:
-        A_phase1 = np.column_stack([A, np.zeros((A.shape[0], 1))])
-    else:
-        A_phase1 = np.zeros((0, n_original + 1))
-
-    # Run barrier method on Phase I problem
-    print("\nRunning Phase I barrier method...")
-    z_star, history_phase1 = barrier_method(
-        f0=f0_phase1,
-        grad0=grad0_phase1,
-        hess0=hess0_phase1,
-        fis=gis,
-        grads=grad_gis,
-        hesses=hess_gis,
-        A=A_phase1,
-        b=b,
-        x0=z0,
-        t0=t0,
-        mu=mu,
-        eps_outer=eps_outer,
-        alpha=alpha,
-        beta=beta,
-        eps_inner=eps_inner
-    )
-
-    # Extract solution
-    x_phase1 = z_star[:n_original]
-    s_star = z_star[-1]
-
-    print(f"\nPhase I completed:")
-    print(f"  Number of outer iterations: {len(history_phase1)}")
-    print(f"  s_star = {s_star:.10f}")
-
-    if s_star < 0:
-        print(f"  SUCCESS: Found strictly feasible point (s_star < 0)")
-        return x_phase1, s_star, z_star
-    else:
-        print(f"  FAILED: No strictly feasible point found (s_star >= 0)")
-        return None, s_star, z_star
-
-
-# ============================================================================
 # Visualization
 # ============================================================================
 
 def plot_feasible_region_with_solution(f0, A, b, fis, x_star, history,
                                        x_range=(-1, 2.5), y_range=(-0.5, 2.5),
-                                       output_file='plots/q1e_solution.png'):
+                                       output_file='plots/barrier_solution.png'):
     """
     Plot the feasible region and barrier method trajectory.
 
@@ -542,10 +243,10 @@ def plot_feasible_region_with_solution(f0, A, b, fis, x_star, history,
 # ============================================================================
 
 def main():
-    """Run Phase I and barrier method on Q1(e) problem."""
+    """Run Phase I and the barrier method on the example problem."""
 
     print("=" * 80)
-    print("Q1(e): Barrier Method with Phase I")
+    print("Barrier Method with Phase I")
     print("=" * 80)
 
     # Problem setup
@@ -586,7 +287,8 @@ def main():
         eps_outer=1e-6,
         alpha=0.1,
         beta=0.5,
-        eps_inner=1e-6
+        eps_inner=1e-6,
+        verbose=True
     )
 
     if x_phase1 is None:
@@ -676,7 +378,7 @@ def main():
         history=history,
         x_range=(-1, 2.5),
         y_range=(-0.5, 2.5),
-        output_file='plots/q1e_solution.png'
+        output_file='plots/barrier_solution.png'
     )
 
     # ========================================================================

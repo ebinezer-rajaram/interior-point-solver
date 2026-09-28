@@ -1,5 +1,5 @@
 """
-4M17 Coursework - Question 2(g): Soft-Margin SVM using Barrier Method
+Soft-Margin SVM using the Barrier Method
 
 Solve the soft-margin SVM problem:
     min_{w,b,ξ} 1/2 ||w||_2^2 + c * ||ξ||_1
@@ -20,10 +20,9 @@ from sklearn.datasets import make_blobs
 import sys
 import os
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from optimizer import newton_eq
+from src.barrier import barrier_method
 
 
 def generate_data(n_samples=100, random_state=42):
@@ -199,79 +198,29 @@ def soft_margin_svm_barrier(X, y, c, t0=1.0, mu=10.0, eps_outer=1e-6,
         print(f"Max constraint value: {max_constraint:.6e} (must be < 0)")
     assert max_constraint < 0, f"Starting point is not strictly feasible! max_constraint = {max_constraint}"
 
-    # Barrier method
-    t = t0
-    z = z0.copy()
-    history = [z.copy()]
+    # Barrier method (shared implementation in src/barrier.py)
+    z, outer_history = barrier_method(
+        f0, grad0, hess0, fis, grads, hesses, A, b_eq, z0,
+        t0=t0, mu=mu, eps_outer=eps_outer, alpha=alpha, beta=beta,
+        eps_inner=eps_inner, max_outer_it=max_outer_it
+    )
+    history = [z0.copy()] + [h['x'] for h in outer_history]
 
     if verbose:
         print("\n" + "="*80)
         print(f"{'Iter':<6} {'t':<12} {'(2m)/t':<12} {'f0(z)':<12} {'||w||':<12} {'Σξ':<12}")
         print("="*80)
+        for k, h in enumerate(outer_history):
+            w_norm = np.linalg.norm(h['x'][:2])
+            xi_sum = np.sum(h['x'][3:])
+            print(f"{k+1:<6} {h['t']:<12.2e} {h['gap']:<12.2e} {h['f0_val']:<12.6f} {w_norm:<12.6f} {xi_sum:<12.6f}")
+        print("="*80)
+        if outer_history and outer_history[-1]['gap'] <= eps_outer:
+            print(f"Converged: (2m)/t = {outer_history[-1]['gap']:.2e} <= {eps_outer:.2e}")
+        else:
+            print("Warning: barrier method did not reach (2m)/t <= eps_outer")
 
-    for outer_it in range(max_outer_it):
-        # Construct barrier objective: φ_t(z) = t*f0(z) - Σ log(-fi(z))
-        def phi_t(z):
-            val = t * f0(z)
-            for fi in fis:
-                fi_val = fi(z)
-                if fi_val >= 0:
-                    return np.inf
-                val -= np.log(-fi_val)
-            return val
-
-        def grad_phi_t(z):
-            g = t * grad0(z)
-            for i, fi in enumerate(fis):
-                fi_val = fi(z)
-                if fi_val >= 0:
-                    return np.full(n, np.nan)
-                g -= grads[i](z) / fi_val
-            return g
-
-        def hess_phi_t(z):
-            H = t * hess0(z)
-            for i, fi in enumerate(fis):
-                fi_val = fi(z)
-                if fi_val >= 0:
-                    return np.full((n, n), np.nan)
-                grad_fi_val = grads[i](z)
-                H -= hesses[i](z) / fi_val
-                H += np.outer(grad_fi_val, grad_fi_val) / (fi_val ** 2)
-            return H
-
-        # Centering step: minimize φ_t(z) using Newton's method
-        z_new, it_inner, zs_inner, _ = newton_eq(
-            phi_t, grad_phi_t, hess_phi_t, A, b_eq, z,
-            alpha=alpha, beta=beta, eps=eps_inner, max_it=50
-        )
-
-        z = z_new
-        history.append(z.copy())
-
-        # Compute current values
-        w_norm = np.linalg.norm(z[:2])
-        xi_sum = np.sum(z[3:])
-        gap = (2 * m) / t  # Total number of constraints
-
-        if verbose:
-            print(f"{outer_it+1:<6} {t:<12.2e} {gap:<12.2e} {f0(z):<12.6f} {w_norm:<12.6f} {xi_sum:<12.6f}")
-
-        # Check stopping criterion: (2m)/t <= eps_outer
-        if gap <= eps_outer:
-            if verbose:
-                print("="*80)
-                print(f"Converged: (2m)/t = {gap:.2e} <= {eps_outer:.2e}")
-            break
-
-        # Increase t
-        t *= mu
-    else:
-        if verbose:
-            print("="*80)
-            print("Warning: Maximum iterations reached")
-
-    return z, outer_it + 1, history
+    return z, len(outer_history), history
 
 
 def find_feasible_start_soft(X, y):
@@ -524,7 +473,7 @@ def plot_metrics_vs_c(c_values, results, save_path):
 
 def main():
     print("="*80)
-    print("4M17 Coursework - Question 2(g): Soft-Margin SVM")
+    print("Soft-Margin SVM")
     print("="*80)
 
     # Generate dataset (deterministic)
@@ -609,17 +558,17 @@ def main():
     w_plot, b_plot, _ = solutions[c_idx]
     plot_decision_boundary(
         X, y, w_plot, b_plot,
-        save_path='plots/q2g_decision_boundary.png'
+        save_path='plots/svm_soft_margin_boundary.png'
     )
 
     # Plot 2: Metrics vs c
     plot_metrics_vs_c(
         c_values, results,
-        save_path='plots/q2g_metrics_vs_c.png'
+        save_path='plots/svm_soft_margin_metrics_vs_c.png'
     )
 
     print("\n" + "="*80)
-    print("Question 2(g) Complete!")
+    print("Done.")
     print("="*80)
 
 
